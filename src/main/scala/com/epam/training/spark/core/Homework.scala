@@ -1,5 +1,6 @@
 package com.epam.training.spark.core
 
+import java.time.LocalDate
 import com.epam.training.spark.core.domain.Climate
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
@@ -59,15 +60,47 @@ object Homework {
 
   }
 
-  def getRawDataWithoutHeader(sc: SparkContext, rawDataPath: String): RDD[List[String]] = ???
+  def MAX_COLUMNS = 7
 
-  def findErrors(rawData: RDD[List[String]]): List[Int] = ???
+  def getRawDataWithoutHeader(sc: SparkContext, rawDataPath: String): RDD[List[String]] =
+    sc.textFile(rawDataPath)
+      .filter(!_.startsWith("#"))
+      .map(_.split(DELIMITER, MAX_COLUMNS).toList)
+      .cache()
 
-  def mapToClimate(rawData: RDD[List[String]]): RDD[Climate] = ???
+  def findErrors(rawData: RDD[List[String]]): List[Int] =
+    rawData
+      .map(
+        fields =>
+          fields
+            .map(field =>
+              if (field == null || field.isEmpty) 1 else 0))
+      .reduce((list1, list2) => list1.zip(list2).map { case (a, b) => a + b })
 
-  def averageTemperature(climateData: RDD[Climate], month: Int, dayOfMonth: Int): RDD[Double] = ???
+  def mapToClimate(rawData: RDD[List[String]]): RDD[Climate] =
+    rawData
+      .map(line => Climate(line(0), line(1), line(2), line(3), line(4), line(5), line(6)))
 
-  def predictTemperature(climateData: RDD[Climate], month: Int, dayOfMonth: Int): Double = ???
+  def averageTemperature(climateData: RDD[Climate], month: Int, dayOfMonth: Int): RDD[Double] =
+    climateData
+      .filter(data => data.observationDate.getMonth.getValue == month
+        && data.observationDate.getDayOfMonth == dayOfMonth
+        && data.meanTemperature.value != Double.NaN)
+      .map(_.meanTemperature.value)
+
+  def predictTemperature(climateData: RDD[Climate], month: Int, dayOfMonth: Int): Double = {
+
+    def avgOnSameMonthAndDay(day: LocalDate): Double = {
+      averageTemperature(climateData, day.getMonthValue, day.getDayOfMonth).mean()
+    }
+
+    def date = LocalDate.of(LocalDate.now().getYear, month, dayOfMonth)
+
+    (avgOnSameMonthAndDay(date)
+      + avgOnSameMonthAndDay(date.minusDays(1))
+      + avgOnSameMonthAndDay(date.plusDays(1))) / 3.0
+
+  }
 
 
 }
